@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+
+# scripts/health
+
+# Checks the health of the OD&H TorProxy by verifying that it can
+# successfully route traffic through the Tor network.
+
+# --- Configuration ---
+
+# Location of helper functions and Tor config
+source /app/internal/index.sh  # Sourcing for logging function
+TOR_CONFIG="/etc/tor/torrc"
+
+# Default SOCKS port (used if not found in torrc)
+DEFAULT_SOCKS_PORT="1080"
+
+# Check Tor Project API endpoint
+CHECK_URL="https://check.torproject.org/api/ip"
+
+# --- Helper Functions ---
+
+# Get a Tor config option from torrc
+get_torrc_option() {
+  grep -i "^$1" "$TOR_CONFIG" | awk '{print $2}'
+}
+
+# --- Main Script ---
+
+log INFO "Checking OD&H TorProxy health..."
+
+# Determine the SocksPort
+SOCKS_PORT=$(get_torrc_option "SocksPort")
+if [ -z "$SOCKS_PORT" ]; then
+  log WARNING "SocksPort not found in $TOR_CONFIG. Using default: $DEFAULT_SOCKS_PORT"
+  SOCKS_PORT="$DEFAULT_SOCKS_PORT"
+fi
+
+log INFO "Using SocksPort: $SOCKS_PORT"
+
+# Check if curl is installed
+if ! command -v curl &> /dev/null; then
+  log ERROR "curl is not installed.  Please install it to run this health check."
+  echo "FAIL"
+  exit 1
+fi
+
+# Perform the health check using curl
+if curl -s -x "socks5://127.0.0.1:$SOCKS_PORT" "$CHECK_URL" | grep -q '"IsTor":true'; then
+  log INFO "Tor proxy is working correctly."
+  echo "OK"
+  exit 0
+else
+  log ERROR "Tor proxy health check failed."
+  echo "FAIL"
+  exit 1
+fi
